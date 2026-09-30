@@ -1,0 +1,108 @@
+name: Radar inmobiliario
+
+# Un unico workflow se encarga de todo: atiende los comandos que le escribas al
+# bot y escanea los portales cuando toca (los intervalos estan en config.json).
+# Tenerlo todo en un solo sitio evita que dos ejecuciones simultaneas se pisen
+# al guardar el estado.
+
+on:
+  schedule:
+    # Cada 30 minutos, de 06:00 a 21:30 UTC (08:00-23:30 en la peninsula, en
+    # horario de verano). Si quieres que los comandos respondan antes, baja el
+    # intervalo; ten en cuenta el gasto de minutos que se explica en el README.
+    - cron: "*/30 6-21 * * *"
+  workflow_dispatch:
+    # Este es el boton "Run workflow" que puedes pulsar desde la app de GitHub
+    # en el movil cuando quieras lanzarlo al momento.
+    inputs:
+      forzar:
+        description: "Escanear ahora, sin esperar al intervalo"
+        required: false
+        default: ""
+        type: choice
+        options: ["", "rapido", "completo"]
+
+# Nunca dos a la vez: ambas escribirian la misma base de datos.
+concurrency:
+  group: radar
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  radar:
+    runs-on: ubuntu-latest
+    # El barrido completo diario recorre ~670 paginas a 2 s por peticion: unos
+    # 30 minutos. El resto de pasadas duran menos de uno. Con margen de sobra,
+    # porque si el job muere a medias el barrido queda incompleto (el radar lo
+    # detecta y no da de baja anuncios, pero se pierde la pasada).
+    timeout-minutes: 50
+
+    steps:
+      - name: Descargar el codigo
+        uses: actions/checkout@v4
+
+      - name: Preparar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      # El estado vive en su propia rama huerfana, que se reescribe entera en
+      # cada pasada. Si se guardara en la rama principal, el historial creceria
+      # con una copia nueva de la base de datos cada media hora. Se guarda
+      # comprimida: 3,4 MB de SQLite quedan en menos de 1 MB.
+      - name: Recuperar el estado anterior
+        run: |
+          mkdir -p data
+          git fetch origin estado --depth=1 2>/dev/null || echo "aun no hay estado: primera ejecucion"
+          if git cat-file -e origin/estado:data/radar.db.gz 2>/dev/null; then
+            git show origin/estado:data/radar.db.gz | gunzip > data/radar.db
+            echo "estado recuperado ($(du -h data/radar.db | cut -f1))"
+          elif [ -f data/radar.db ]; then
+            echo "primera pasada: se parte de la base incluida en el repositorio"
+          else
+            echo "empezando de cero; esta pasada solo creara la linea base"
+          fi
+          # Huella del estado de partida, para saber luego si ha cambiado algo.
+          sha256sum data/radar.db 2>/dev/null | cut -d' ' -f1 > /tmp/estado_previo || echo "" > /tmp/estado_previo
+
+      - name: Ejecutar el radar
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python run.py ciclo ${{ inputs.forzar && format('--forzar {0}', inputs.forzar) || '' }}
+
+      - name: Guardar el estado
+        if: always()
+        run: |
+          if [ ! -f data/radar.db ]; then
+            echo "no hay base de datos que guardar"
+            exit 0
+          fi
+
+          # La mayoria de pasadas solo miran si has escrito al bot y no tocan
+          # nada. Subir 1 MB en cada una seria tirar ancho de banda: si la
+          # huella coincide con la de partida, no hay nada que guardar.
+          if [ "$(sha256sum data/radar.db | cut -d' ' -f1)" = "$(cat /tmp/estado_previo)" ]; then
+            echo "el estado no ha cambiado; no se sube nada"
+            exit 0
+          fi
+
+          gzip -9 -c data/radar.db > data/radar.db.gz
+          echo "estado: $(du -h data/radar.db.gz | cut -f1) comprimidos"
+
+          git config user.name  "radar-inmobiliario"
+          git config user.email "radar@users.noreply.github.com"
+
+          # Rama huerfana con un unico commit: el historial nunca crece.
+          git checkout --orphan estado-nuevo
+          git rm -rf --cached . >/dev/null 2>&1 || true
+          git add -f data/radar.db.gz
+          git commit -q -m "estado $(date -u '+%Y-%m-%d %H:%M UTC')"
+          git push -q --force origin estado-nuevo:estado
+          echo "estado guardado"

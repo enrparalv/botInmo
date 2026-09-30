@@ -1,0 +1,75 @@
+{
+  "filtros": {
+    "provincias": [
+      "Huelva",
+      "Sevilla"
+    ],
+    "precio_max": 300000,
+    "precio_min": 0,
+    "dormitorios_min": 3,
+    "banos_min": 2,
+    "excluir_ocupados": true,
+    "incluir_ocupacion_desconocida": true,
+    "tipos": "cualquiera"
+  },
+  "escaneo": {
+    "paginas_rapido": 5,
+    "paginas_completo": 250,
+    "segundos_entre_peticiones": 1.5,
+    "reintentos": 3,
+    "max_verificaciones": 40,
+    "_comentario": "max_verificaciones: cuantas fichas completas se abren por ciclo para confirmar que el inmueble no esta ocupado antes de avisarte."
+  },
+  "fuentes": {
+    "fotocasa": {
+      "activa": true,
+      "provincias": {
+        "Huelva": "huelva-provincia",
+        "Sevilla": "sevilla-provincia"
+      }
+    },
+    "pisos": {
+      "activa": true,
+      "provincias": {
+        "Huelva": "pisos-huelva",
+        "Sevilla": "pisos-sevilla"
+      }
+    },
+    "habitaclia": {
+      "activa": true,
+      "comentario": "Habitaclia no expone una pagina provincial rastreable (la provincial usa /vistamapa.htm, prohibido por su robots.txt) ni permite ordenar por fecha (prohibe el parametro ordenar=). Por eso solo entra en el barrido completo y se rastrea por municipios. Anade aqui los que te interesen con su slug.",
+      "municipios": {
+        "Huelva": [
+          "huelva",
+          "almonte",
+          "ayamonte",
+          "punta_umbria",
+          "isla_cristina",
+          "lepe",
+          "cartaya",
+          "aljaraque",
+          "moguer",
+          "palos_de_la_frontera"
+        ],
+        "Sevilla": [
+          "sevilla",
+          "dos_hermanas",
+          "alcala_de_guadaira",
+          "mairena_del_aljarafe",
+          "tomares",
+          "bormujos",
+          "utrera",
+          "carmona",
+          "ecija",
+          "san_juan_de_aznalfarache"
+        ]
+      },
+      "paginas_por_municipio": 4
+    }
+  },
+  "intervalos": {
+    "minutos_entre_rapidos": 60,
+    "horas_entre_completos": 24,
+    "_comentario": "El workflow de GitHub se ejecuta cada 30 min para atender tus comandos de Telegram, pero solo escanea los portales cuando han pasado estos intervalos. Asi los comandos responden rapido sin castigar a los portales ni gastar minutos de Actions."
+  }
+}
